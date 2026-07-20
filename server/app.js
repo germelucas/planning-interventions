@@ -30,6 +30,10 @@ const shiftWeeks = (value, weeks) => {
 export function createApp({ database } = {}) {
   const db = database ?? openDatabase(process.env.DB_PATH ?? 'planning.db'), app = express();
   app.use(express.json());
+  app.use((request, _response, next) => {
+    if (request.path === '/api/handler' && typeof request.query.path === 'string' && request.query.path.startsWith('/api/')) request.url = request.query.path;
+    next();
+  });
   app.get('/api/clients', (_request, response) => response.json(db.prepare('SELECT * FROM clients ORDER BY lastName,firstName').all()));
   app.get('/api/employees', (_request, response) => response.json(db.prepare('SELECT * FROM employees ORDER BY lastName,firstName').all()));
   app.get('/api/interventions', (_request, response) => response.json(db.prepare('SELECT i.*,c.firstName clientFirstName,c.lastName clientLastName,e.firstName employeeFirstName,e.lastName employeeLastName FROM interventions i JOIN clients c ON c.id=i.clientId JOIN employees e ON e.id=i.employeeId ORDER BY i.startAt').all()));
