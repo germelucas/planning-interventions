@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { openDatabase } from './database.js';
 
 const person = body => {
@@ -21,12 +22,6 @@ function intervention(body, db, id = null) {
   return { clientId, employeeId, startAt, endAt };
 }
 
-const shiftWeeks = (value, weeks) => {
-  const [date, time] = value.split('T'), day = new Date(`${date}T12:00:00`), pad = number => String(number).padStart(2, '0');
-  day.setDate(day.getDate() + weeks * 7);
-  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}T${time}`;
-};
-
 export function createApp({ database } = {}) {
   const db = database ?? openDatabase(process.env.DB_PATH ?? 'planning.db'), app = express();
   app.use(express.json());
@@ -34,20 +29,19 @@ export function createApp({ database } = {}) {
     if (request.path === '/api/handler' && typeof request.query.path === 'string' && request.query.path.startsWith('/api/')) request.url = request.query.path;
     next();
   });
+  app.use((request, response, next) => {
+    const requestId = request.get('X-Request-Id') || randomUUID(), startedAt = Date.now();
+    response.set('X-Request-Id', requestId);
+    response.on('finish', () => {
+      if (request.method !== 'GET') console.info(JSON.stringify({ event: 'api_request', requestId, method: request.method, path: request.path, status: response.statusCode, durationMs: Date.now() - startedAt }));
+    });
+    next();
+  });
   app.get('/api/clients', (_request, response) => response.json(db.prepare('SELECT * FROM clients ORDER BY lastName,firstName').all()));
   app.get('/api/employees', (_request, response) => response.json(db.prepare('SELECT * FROM employees ORDER BY lastName,firstName').all()));
   app.get('/api/interventions', (_request, response) => response.json(db.prepare('SELECT i.*,c.firstName clientFirstName,c.lastName clientLastName,e.firstName employeeFirstName,e.lastName employeeLastName FROM interventions i JOIN clients c ON c.id=i.clientId JOIN employees e ON e.id=i.employeeId ORDER BY i.startAt').all()));
   for (const [route, table] of [['/api/clients', 'clients'], ['/api/employees', 'employees']]) app.post(route, (request, response, next) => { try { const value = person(request.body), result = db.prepare(`INSERT INTO ${table}(firstName,lastName)VALUES(?,?)`).run(value.firstName, value.lastName); response.status(201).json(db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(result.lastInsertRowid)); } catch (error) { next(error); } });
-  app.post('/api/interventions', (request, response, next) => { try {
-    const recurrenceCount = Number(request.body.recurrenceCount ?? 1);
-    if (![1, 2, 3].includes(recurrenceCount)) throw Error('Le nombre de répétitions est invalide.');
-    const created = db.transaction(() => Array.from({ length: recurrenceCount }, (_, index) => {
-      const value = intervention({ ...request.body, startAt: shiftWeeks(request.body.startAt, index), endAt: shiftWeeks(request.body.endAt, index) }, db);
-      const result = db.prepare('INSERT INTO interventions(clientId,employeeId,startAt,endAt)VALUES(?,?,?,?)').run(value.clientId, value.employeeId, value.startAt, value.endAt);
-      return db.prepare('SELECT * FROM interventions WHERE id=?').get(result.lastInsertRowid);
-    }))();
-    response.status(201).json(created.length === 1 ? created[0] : created);
-  } catch (error) { next(error); } });
+  app.post('/api/interventions', (request, response, next) => { try { const value = intervention(request.body, db), result = db.prepare('INSERT INTO interventions(clientId,employeeId,startAt,endAt)VALUES(?,?,?,?)').run(value.clientId, value.employeeId, value.startAt, value.endAt); response.status(201).json(db.prepare('SELECT * FROM interventions WHERE id=?').get(result.lastInsertRowid)); } catch (error) { next(error); } });
   app.patch('/api/interventions/:id', (request, response, next) => { try { const id = Number(request.params.id); if (!Number.isInteger(id)) return response.status(400).json({ error: 'Identifiant invalide.' }); if (!db.prepare('SELECT id FROM interventions WHERE id=?').get(id)) return response.status(404).json({ error: 'Intervention introuvable.' }); const value = intervention(request.body, db, id); db.prepare('UPDATE interventions SET clientId=?,employeeId=?,startAt=?,endAt=? WHERE id=?').run(value.clientId, value.employeeId, value.startAt, value.endAt, id); response.json(db.prepare('SELECT * FROM interventions WHERE id=?').get(id)); } catch (error) { next(error); } });
   app.delete('/api/interventions/:id', (request, response) => { const id = Number(request.params.id); if (!Number.isInteger(id)) return response.status(400).json({ error: 'Identifiant invalide.' }); if (!db.prepare('DELETE FROM interventions WHERE id=?').run(id).changes) return response.status(404).json({ error: 'Intervention introuvable.' }); response.json({ deleted: true }); });
   app.use('/api', (_request, response) => response.status(404).json({ error: 'Ressource introuvable.' }));

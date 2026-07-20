@@ -28,7 +28,8 @@ const isoWeek = date => {
 
 async function api(url, options = {}) {
   const endpoint = `/api/handler?path=${encodeURIComponent(url)}`;
-  const response = await fetch(endpoint, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  const response = await fetch(endpoint, { ...options, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...options.headers } });
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     throw new Error(`Le service API est indisponible (${response.status}).`);
@@ -234,18 +235,21 @@ function DayColumn({ day, items, allItems, onNew, onContextRequest, onItemContex
 function Modal({ modal, clients, employees, error, setError, close, saved }) {
   const item = modal.item;
   const isPerson = modal.type !== 'intervention';
-  const [recurring, setRecurring] = useState(false);
+  const [saving, setSaving] = useState(false);
   async function submit(event) {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    const form = new FormData(event.currentTarget);
     try {
       if (isPerson) await api(`/api/${modal.type === 'client' ? 'clients' : 'employees'}`, { method: 'POST', body: JSON.stringify({ firstName: form.get('firstName'), lastName: form.get('lastName') }) });
-      else await api(`/api/interventions${item ? `/${item.id}` : ''}`, { method: item ? 'PATCH' : 'POST', body: JSON.stringify({ clientId: Number(form.get('clientId')), employeeId: Number(form.get('employeeId')), startAt: `${form.get('date')}T${form.get('start')}`, endAt: `${form.get('date')}T${form.get('end')}`, recurrenceCount: item || !recurring ? 1 : Number(form.get('recurrenceCount')) }) });
+      else await api(`/api/interventions${item ? `/${item.id}` : ''}`, { method: item ? 'PATCH' : 'POST', body: JSON.stringify({ clientId: Number(form.get('clientId')), employeeId: Number(form.get('employeeId')), startAt: `${form.get('date')}T${form.get('start')}`, endAt: `${form.get('date')}T${form.get('end')}` }) });
       await saved();
-    } catch (err) { setError(err.message); }
+    } catch (err) { setError(err.message); setSaving(false); }
   }
   async function remove() { if (window.confirm('Supprimer cette intervention ?')) { await api(`/api/interventions/${item.id}`, { method: 'DELETE' }); await saved(); } }
   return <div className="backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><form onSubmit={submit}><button type="button" className="close" onClick={close}>×</button><h2>{modal.type === 'client' ? 'Nouveau client' : modal.type === 'employee' ? 'Nouvelle intervenante' : item ? "Modifier l'intervention" : 'Nouvelle intervention'}</h2>
-    {isPerson ? <><label>Prénom<input name="firstName" required autoFocus /></label><label>Nom<input name="lastName" required /></label></> : <><label>Client<select name="clientId" defaultValue={item?.clientId}>{clients.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Intervenante<select name="employeeId" defaultValue={item?.employeeId}>{employees.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Date<input name="date" type="date" required defaultValue={item?.startAt.slice(0, 10) || modal.date} /></label><div className="row"><label>Début<input name="start" type="time" required defaultValue={item?.startAt.slice(11, 16) || modal.start || '09:00'} /></label><label>Fin<input name="end" type="time" required defaultValue={item?.endAt.slice(11, 16) || modal.end || '10:00'} /></label></div>{!item && <><label className="recurring-option"><input type="checkbox" checked={recurring} onChange={event => setRecurring(event.target.checked)} /> Répéter chaque semaine</label>{recurring && <label>Nombre d'interventions<select name="recurrenceCount" defaultValue="2"><option value="2">2 interventions</option><option value="3">3 interventions</option></select></label>}</>}</>}
-    <p className="error">{error}</p><div className="actions">{item && <button type="button" className="danger" onClick={remove}>Supprimer</button>}<button type="button" onClick={close}>Annuler</button><button className="primary">Enregistrer</button></div>
+    {isPerson ? <><label>Prénom<input name="firstName" required autoFocus /></label><label>Nom<input name="lastName" required /></label></> : <><label>Client<select name="clientId" defaultValue={item?.clientId}>{clients.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Intervenante<select name="employeeId" defaultValue={item?.employeeId}>{employees.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Date<input name="date" type="date" required defaultValue={item?.startAt.slice(0, 10) || modal.date} /></label><div className="row"><label>Début<input name="start" type="time" required defaultValue={item?.startAt.slice(11, 16) || modal.start || '09:00'} /></label><label>Fin<input name="end" type="time" required defaultValue={item?.endAt.slice(11, 16) || modal.end || '10:00'} /></label></div></>}
+    <p className="error">{error}</p><div className="actions">{item && <button type="button" className="danger" onClick={remove}>Supprimer</button>}<button type="button" onClick={close} disabled={saving}>Annuler</button><button className="primary" disabled={saving}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button></div>
   </form></div>;
 }
