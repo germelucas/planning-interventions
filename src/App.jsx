@@ -28,6 +28,10 @@ const isoWeek = date => {
 
 async function api(url, options = {}) {
   const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Le service API est indisponible (${response.status}).`);
+  }
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Une erreur est survenue.');
   return data;
