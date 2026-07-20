@@ -33,7 +33,7 @@ export function createApp({ database } = {}) {
     const requestId = request.get('X-Request-Id') || randomUUID(), startedAt = Date.now();
     response.set('X-Request-Id', requestId);
     response.on('finish', () => {
-      if (request.method !== 'GET') console.info(JSON.stringify({ event: 'api_request', requestId, method: request.method, path: request.path, status: response.statusCode, durationMs: Date.now() - startedAt }));
+      if (request.method !== 'GET') console.info(JSON.stringify({ event: 'api_request', requestId, method: request.method, path: request.path, status: response.statusCode, clientId: request.body?.clientId, employeeId: request.body?.employeeId, startAt: request.body?.startAt, durationMs: Date.now() - startedAt }));
     });
     next();
   });
