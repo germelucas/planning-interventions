@@ -39,7 +39,8 @@ export default function App() {
   const [interventions, setInterventions] = useState([]);
   const [cursor, setCursor] = useState(new Date());
   const [view, setView] = useState('week');
-  const [filter, setFilter] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
   const [modal, setModal] = useState(null);
   const [error, setError] = useState('');
   const [draggingId, setDraggingId] = useState(null);
@@ -60,8 +61,10 @@ export default function App() {
     const day = new Date(weekStart); day.setDate(day.getDate() + index); return day;
   });
   const visible = useMemo(
-    () => interventions.filter(item => !filter || item.employeeId === Number(filter)),
-    [interventions, filter],
+    () => interventions.filter(item =>
+      (!employeeFilter || item.employeeId === Number(employeeFilter))
+      && (!clientFilter || item.clientId === Number(clientFilter))),
+    [interventions, employeeFilter, clientFilter],
   );
   const weekEnd = new Date(days[6]);
   const weekLabel = `${weekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${weekEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
@@ -135,7 +138,7 @@ export default function App() {
       <button className="primary" onClick={() => openNew(new Date())}>＋ Nouvelle intervention</button>
       <button onClick={() => { setError(''); setModal({ type: 'client' }); }}>＋ Nouveau client</button>
       <button onClick={() => { setError(''); setModal({ type: 'employee' }); }}>＋ Nouvelle intervenante</button>
-      <div className="filter-card"><p>FILTRES</p><label>Intervenante<select value={filter} onChange={event => setFilter(event.target.value)}><option value="">Toute l'équipe</option>{employees.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label></div>
+      <div className="filter-card"><p>FILTRES</p><label>Intervenante<select value={employeeFilter} onChange={event => setEmployeeFilter(event.target.value)}><option value="">Toute l'équipe</option>{employees.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Client<select value={clientFilter} onChange={event => setClientFilter(event.target.value)}><option value="">Tous les clients</option>{clients.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label></div>
     </aside>
 
     <main>
