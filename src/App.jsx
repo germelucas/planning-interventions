@@ -28,20 +28,21 @@ const isoWeek = date => {
 
 const layoutOverlaps = items => {
   const layout = new Map();
-  const sorted = [...items].sort((a, b) => a.startAt.localeCompare(b.startAt) || a.endAt.localeCompare(b.endAt));
-  let cluster = [], clusterEnd = '', columnEnds = [];
+  const timed = items.map(item => ({ item, start: timeInMinutes(item.startAt), end: timeInMinutes(item.endAt) }));
+  const sorted = timed.sort((a, b) => a.start - b.start || a.end - b.end);
+  let cluster = [], clusterEnd = -1, columnEnds = [];
   const finishCluster = () => {
     const columns = Math.max(1, columnEnds.length);
     cluster.forEach(({ item, column }) => layout.set(item.id, { column, columns }));
-    cluster = []; columnEnds = [];
+    cluster = []; columnEnds = []; clusterEnd = -1;
   };
-  for (const item of sorted) {
-    if (cluster.length && item.startAt >= clusterEnd) finishCluster();
-    let column = columnEnds.findIndex(endAt => endAt <= item.startAt);
+  for (const timedItem of sorted) {
+    if (cluster.length && timedItem.start >= clusterEnd) finishCluster();
+    let column = columnEnds.findIndex(end => end <= timedItem.start);
     if (column < 0) column = columnEnds.length;
-    columnEnds[column] = item.endAt;
-    cluster.push({ item, column });
-    if (!clusterEnd || item.endAt > clusterEnd) clusterEnd = item.endAt;
+    columnEnds[column] = timedItem.end;
+    cluster.push({ item: timedItem.item, column });
+    clusterEnd = Math.max(clusterEnd, timedItem.end);
   }
   if (cluster.length) finishCluster();
   return layout;
