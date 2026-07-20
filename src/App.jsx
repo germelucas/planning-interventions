@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const START_HOUR = 8;
 const END_HOUR = 22;
-const HOUR_HEIGHT = 72;
+const HOUR_HEIGHT = 48;
 const pad = value => String(value).padStart(2, '0');
 const dateKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const fullName = person => `${person.firstName} ${person.lastName}`;
