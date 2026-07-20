@@ -30,6 +30,7 @@ async function api(url, options = {}) {
   const endpoint = `/api/handler?path=${encodeURIComponent(url)}`;
   const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
   const response = await fetch(endpoint, { ...options, headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...options.headers } });
+  console.debug('[planning:api]', { requestId, method: options.method || 'GET', url, status: response.status });
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     throw new Error(`Le service API est indisponible (${response.status}).`);
@@ -102,13 +103,16 @@ export default function App() {
     const duration = timeInMinutes(item.endAt) - timeInMinutes(item.startAt);
     const nextStart = Math.min(Math.max(START_HOUR * 60, startMinutes), END_HOUR * 60 - duration);
     const startAt = dateTime(day, nextStart), endAt = dateTime(day, nextStart + duration);
+    console.debug('[planning:drag:move]', { id: item.id, idType: typeof item.id, from: [item.startAt, item.endAt], to: [startAt, endAt] });
     if (startAt === item.startAt && endAt === item.endAt) return;
     const previous = interventions;
     setInterventions(current => current.map(value => value.id === item.id ? { ...value, startAt, endAt } : value));
     try {
       await api(`/api/interventions/${item.id}`, { method: 'PATCH', body: JSON.stringify({ clientId: item.clientId, employeeId: item.employeeId, startAt, endAt }) });
+      console.debug('[planning:drag:saved]', { id: item.id, startAt, endAt });
       setError('');
     } catch (err) {
+      console.error('[planning:drag:error]', { id: item.id, message: err.message });
       setInterventions(previous);
       setError(`Déplacement impossible : ${err.message}`);
     }

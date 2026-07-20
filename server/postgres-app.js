@@ -66,6 +66,7 @@ export function createApp({ database } = {}) {
   app.use('/api', (_q, r) => r.status(404).json({ error: 'Ressource introuvable.' }));
   app.use((error, _q, r, _next) => {
     const conflict = error?.code === '23P01';
+    console.error(JSON.stringify({ event: 'api_error', code: error?.code, message: error?.message, stack: error?.stack }));
     r.status(conflict ? 409 : 400).json({ error: conflict ? 'Cette intervenante a déjà une intervention sur ce créneau.' : error.message || 'Cette opération est impossible.' });
   });
   return app;
