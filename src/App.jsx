@@ -42,6 +42,7 @@ export default function App() {
   const [employeeFilter, setEmployeeFilter] = useState('');
   const [clientFilter, setClientFilter] = useState('');
   const [modal, setModal] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
   const [error, setError] = useState('');
   const [draggingId, setDraggingId] = useState(null);
   const [dropPreview, setDropPreview] = useState(null);
@@ -77,7 +78,20 @@ export default function App() {
     return next;
   });
   const periodName = view === 'day' ? 'jour' : view === 'week' ? 'semaine' : 'mois';
-  const openNew = date => { setError(''); setModal({ type: 'intervention', date: dateKey(date) }); };
+  const openNew = (date, start = '09:00') => {
+    const startMinutes = timeInMinutes(`2000-01-01T${start}`);
+    const endMinutes = Math.min(startMinutes + 60, END_HOUR * 60);
+    setError('');
+    setModal({ type: 'intervention', date: dateKey(date), start, end: `${pad(Math.floor(endMinutes / 60))}:${pad(endMinutes % 60)}` });
+  };
+  const removeIntervention = async item => {
+    if (!window.confirm('Supprimer cette intervention ?')) return;
+    try {
+      await api(`/api/interventions/${item.id}`, { method: 'DELETE' });
+      setContextMenu(null);
+      await load();
+    } catch (err) { setError(err.message); }
+  };
   const moveIntervention = async (item, day, startMinutes) => {
     const duration = timeInMinutes(item.endAt) - timeInMinutes(item.startAt);
     const nextStart = Math.min(Math.max(START_HOUR * 60, startMinutes), END_HOUR * 60 - duration);
@@ -132,7 +146,7 @@ export default function App() {
     document.addEventListener('pointercancel', finish);
   };
 
-  return <div className="shell">
+  return <div className="shell" onClick={() => contextMenu && setContextMenu(null)}>
     <aside>
       <div className="brand"><span>✦</span><div>Maison & soin<small>Planning d'équipe</small></div></div>
       <button className="primary" onClick={() => openNew(new Date())}>＋ Nouvelle intervention</button>
@@ -150,29 +164,30 @@ export default function App() {
       </section>
 
       {error && !modal && <div className="planning-error" role="alert">{error}</div>}
-      {view === 'month' ? <MonthView cursor={cursor} items={visible} onNew={openNew} onEdit={item => { setError(''); setModal({ type: 'intervention', item, date: item.startAt.slice(0, 10) }); }} onMove={moveIntervention} draggingId={draggingId} setDraggingId={setDraggingId} /> : <section className={`calendar ${view === 'day' ? 'day-view' : ''}`}>
-        <div className="calendar-head"><div className="hours-corner">Heure</div>{(view === 'day' ? [cursor] : days).map(day => <button key={dateKey(day)} className={dateKey(day) === dateKey(new Date()) ? 'active' : ''} onClick={() => openNew(day)}><span>{day.toLocaleDateString('fr-FR', { weekday: 'short' })}</span><b>{day.getDate()}</b></button>)}</div>
+      {view === 'month' ? <MonthView cursor={cursor} items={visible} onNew={openNew} onItemContext={(item, x, y) => setContextMenu({ type: 'intervention', item, x: Math.min(x, window.innerWidth - 230), y: Math.min(y, window.innerHeight - 110) })} onMove={moveIntervention} draggingId={draggingId} setDraggingId={setDraggingId} /> : <section className={`calendar ${view === 'day' ? 'day-view' : ''}`}>
+        <div className="calendar-head"><div className="hours-corner">Heure</div>{(view === 'day' ? [cursor] : days).map(day => <div key={dateKey(day)} className={`calendar-day ${dateKey(day) === dateKey(new Date()) ? 'active' : ''}`}><span>{day.toLocaleDateString('fr-FR', { weekday: 'short' })}</span><b>{day.getDate()}</b></div>)}</div>
         <div className="calendar-body">
           <div className="hours">{Array.from({ length: END_HOUR - START_HOUR - 1 }, (_, index) => <span key={index} style={{ top: (index + 1) * HOUR_HEIGHT }}>{pad(START_HOUR + index + 1)}:00</span>)}</div>
-          {(view === 'day' ? [cursor] : days).map(day => <DayColumn key={dateKey(day)} day={day} items={visible.filter(item => item.startAt.slice(0, 10) === dateKey(day))} allItems={visible} onNew={() => openNew(day)} onEdit={item => { if (Date.now() < suppressEditUntil.current) return; setError(''); setModal({ type: 'intervention', item, date: dateKey(day) }); }} onMove={moveIntervention} onResize={startResize} draggingId={draggingId} setDraggingId={setDraggingId} dropPreview={dropPreview} setDropPreview={setDropPreview} />)}
+          {(view === 'day' ? [cursor] : days).map(day => <DayColumn key={dateKey(day)} day={day} items={visible.filter(item => item.startAt.slice(0, 10) === dateKey(day))} allItems={visible} onNew={start => openNew(day, start)} onContextRequest={(start, x, y) => setContextMenu({ type: 'create', day, start, x: Math.min(x, window.innerWidth - 230), y: Math.min(y, window.innerHeight - 110) })} onItemContext={(item, x, y) => setContextMenu({ type: 'intervention', item, x: Math.min(x, window.innerWidth - 230), y: Math.min(y, window.innerHeight - 110) })} onEdit={item => { if (Date.now() < suppressEditUntil.current) return; setError(''); setModal({ type: 'intervention', item, date: dateKey(day) }); }} onMove={moveIntervention} onResize={startResize} draggingId={draggingId} setDraggingId={setDraggingId} dropPreview={dropPreview} setDropPreview={setDropPreview} />)}
         </div>
       </section>}
     </main>
+    {contextMenu && <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={event => event.stopPropagation()}>{contextMenu.type === 'create' ? <button onClick={() => { openNew(contextMenu.day, contextMenu.start); setContextMenu(null); }}><span>＋</span> Créer une intervention le {contextMenu.day.toLocaleDateString('fr-FR')} à {contextMenu.start}</button> : <><button onClick={() => { setError(''); setModal({ type: 'intervention', item: contextMenu.item, date: contextMenu.item.startAt.slice(0, 10) }); setContextMenu(null); }}><span>✎</span> Modifier l'intervention</button><button className="context-danger" onClick={() => removeIntervention(contextMenu.item)}><span>×</span> Supprimer l'intervention</button></>}</div>}
     {modal && <Modal modal={modal} clients={clients} employees={employees} error={error} setError={setError} close={() => setModal(null)} saved={async () => { setModal(null); await load(); }} />}
   </div>;
 }
 
-function MonthView({ cursor, items, onNew, onEdit, onMove, draggingId, setDraggingId }) {
+function MonthView({ cursor, items, onNew, onItemContext, onMove, draggingId, setDraggingId }) {
   const year = cursor.getFullYear(), month = cursor.getMonth();
   const first = new Date(year, month, 1), offset = (first.getDay() + 6) % 7;
   return <section className="month-calendar"><div className="month-weekdays">{['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => <span key={day}>{day}</span>)}</div><div className="month-grid">{Array.from({ length: 42 }, (_, index) => {
     const date = new Date(year, month, index - offset + 1), dateId = dateKey(date);
     const dayItems = items.filter(item => item.startAt.slice(0, 10) === dateId);
-    return <div key={dateId} className={`${date.getMonth() === month ? '' : 'outside'} ${dateId === dateKey(new Date()) ? 'current' : ''} ${draggingId ? 'drop-ready' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const item = items.find(value => value.id === Number(event.dataTransfer.getData('text/plain'))); if (item) onMove(item, date, timeInMinutes(item.startAt)); setDraggingId(null); }} onDoubleClick={() => onNew(date)}><b className="month-number">{date.getDate()}</b>{dayItems.slice(0, 3).map(item => <button key={item.id} draggable className={`month-event color-${item.employeeId % 4} ${draggingId === item.id ? 'dragging' : ''}`} onDragStart={event => { event.dataTransfer.setData('text/plain', String(item.id)); event.dataTransfer.effectAllowed = 'move'; hideNativeDragPreview(event); setDraggingId(item.id); }} onDragEnd={() => setDraggingId(null)} onClick={() => !draggingId && onEdit(item)}><strong>{item.startAt.slice(11, 16)}</strong> {item.clientFirstName}</button>)}{dayItems.length > 3 && <small>+ {dayItems.length - 3} autres</small>}</div>;
+    return <div key={dateId} className={`${date.getMonth() === month ? '' : 'outside'} ${dateId === dateKey(new Date()) ? 'current' : ''} ${draggingId ? 'drop-ready' : ''}`} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const item = items.find(value => value.id === Number(event.dataTransfer.getData('text/plain'))); if (item) onMove(item, date, timeInMinutes(item.startAt)); setDraggingId(null); }} onDoubleClick={() => onNew(date)}><b className="month-number">{date.getDate()}</b>{dayItems.slice(0, 3).map(item => <button key={item.id} draggable className={`month-event color-${item.employeeId % 4} ${draggingId === item.id ? 'dragging' : ''}`} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onItemContext(item, event.clientX, event.clientY); }} onDragStart={event => { event.dataTransfer.setData('text/plain', String(item.id)); event.dataTransfer.effectAllowed = 'move'; hideNativeDragPreview(event); setDraggingId(item.id); }} onDragEnd={() => setDraggingId(null)}><strong>{item.startAt.slice(11, 16)}</strong> {item.clientFirstName}</button>)}{dayItems.length > 3 && <small>+ {dayItems.length - 3} autres</small>}</div>;
   })}</div></section>;
 }
 
-function DayColumn({ day, items, allItems, onNew, onEdit, onMove, onResize, draggingId, setDraggingId, dropPreview, setDropPreview }) {
+function DayColumn({ day, items, allItems, onNew, onContextRequest, onItemContext, onEdit, onMove, onResize, draggingId, setDraggingId, dropPreview, setDropPreview }) {
   const dayId = dateKey(day);
   const preview = dropPreview?.day === dayId ? dropPreview : null;
   const previewItem = preview && allItems.find(item => item.id === preview.itemId);
@@ -189,7 +204,14 @@ function DayColumn({ day, items, allItems, onNew, onEdit, onMove, onResize, drag
     const startMinutes = Math.min(Math.max(START_HOUR * 60, Math.round(rawMinutes / 15) * 15), END_HOUR * 60 - duration);
     if (dropPreview?.day !== dayId || dropPreview.startMinutes !== startMinutes || dropPreview.itemId !== item.id) setDropPreview({ day: dayId, startMinutes, itemId: item.id });
   };
-  return <div className={`day-column ${dayId === dateKey(new Date()) ? 'current' : ''} ${draggingId ? 'drop-ready' : ''}`} onDragOver={updatePreview} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropPreview(null); }} onDrop={event => { event.preventDefault(); const item = allItems.find(value => value.id === Number(event.dataTransfer.getData('text/plain'))); if (item && preview) onMove(item, day, preview.startMinutes); setDraggingId(null); setDropPreview(null); }} onDoubleClick={onNew}>
+  const createFromRightClick = event => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawMinutes = START_HOUR * 60 + (event.clientY - rect.top) * 60 / HOUR_HEIGHT;
+    const startMinutes = Math.min(Math.max(START_HOUR * 60, Math.round(rawMinutes / 15) * 15), (END_HOUR - 1) * 60);
+    onContextRequest(`${pad(Math.floor(startMinutes / 60))}:${pad(startMinutes % 60)}`, event.clientX, event.clientY);
+  };
+  return <div className={`day-column ${dayId === dateKey(new Date()) ? 'current' : ''} ${draggingId ? 'drop-ready' : ''}`} onContextMenu={createFromRightClick} onDragOver={updatePreview} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropPreview(null); }} onDrop={event => { event.preventDefault(); const item = allItems.find(value => value.id === Number(event.dataTransfer.getData('text/plain'))); if (item && preview) onMove(item, day, preview.startMinutes); setDraggingId(null); setDropPreview(null); }} onDoubleClick={() => onNew()}>
     {previewItem && <div className={`event drop-preview color-${previewItem.employeeId % 4}`} style={{ top: previewTop, height: previewHeight }}><b>{dateTime(day, preview.startMinutes).slice(11)} – {dateTime(day, preview.startMinutes + previewDuration).slice(11)}</b><span>{previewItem.clientFirstName} {previewItem.clientLastName}</span><small>Relâchez pour déposer</small></div>}
     {items.map(item => {
       const [startHour, startMinute] = item.startAt.slice(11, 16).split(':').map(Number);
@@ -197,7 +219,7 @@ function DayColumn({ day, items, allItems, onNew, onEdit, onMove, onResize, drag
       const top = Math.max(0, ((startHour - START_HOUR) * 60 + startMinute) * HOUR_HEIGHT / 60);
       const duration = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
       const height = Math.max(44, duration * HOUR_HEIGHT / 60);
-      return <button key={item.id} draggable className={`event color-${item.employeeId % 4} ${draggingId === item.id ? 'dragging' : ''}`} style={{ top, height }} onDragStart={event => { if (event.target.closest('.resize-handle')) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', String(item.id)); event.dataTransfer.effectAllowed = 'move'; hideNativeDragPreview(event); setDraggingId(item.id); }} onDragEnd={() => { setDraggingId(null); setDropPreview(null); }} onDoubleClick={event => event.stopPropagation()} onClick={() => !draggingId && onEdit(item)} title="Maintenez et déplacez pour changer le créneau">
+      return <button key={item.id} draggable className={`event color-${item.employeeId % 4} ${draggingId === item.id ? 'dragging' : ''}`} style={{ top, height }} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onItemContext(item, event.clientX, event.clientY); }} onDragStart={event => { if (event.target.closest('.resize-handle')) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', String(item.id)); event.dataTransfer.effectAllowed = 'move'; hideNativeDragPreview(event); setDraggingId(item.id); }} onDragEnd={() => { setDraggingId(null); setDropPreview(null); }} onDoubleClick={event => event.stopPropagation()} title="Maintenez et déplacez pour changer le créneau">
         <i className="resize-handle resize-handle-top" onPointerDown={event => onResize(item, 'start', event)} title="Modifier l’heure de début" aria-label="Modifier l’heure de début" /><b>{item.startAt.slice(11, 16)} – {item.endAt.slice(11, 16)}</b><span>{item.clientFirstName} {item.clientLastName}</span><small>{item.employeeFirstName} {item.employeeLastName}</small><i className="resize-handle resize-handle-bottom" onPointerDown={event => onResize(item, 'end', event)} title="Modifier l’heure de fin" aria-label="Modifier l’heure de fin" />
       </button>;
     })}
@@ -217,7 +239,7 @@ function Modal({ modal, clients, employees, error, setError, close, saved }) {
   }
   async function remove() { if (window.confirm('Supprimer cette intervention ?')) { await api(`/api/interventions/${item.id}`, { method: 'DELETE' }); await saved(); } }
   return <div className="backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><form onSubmit={submit}><button type="button" className="close" onClick={close}>×</button><h2>{modal.type === 'client' ? 'Nouveau client' : modal.type === 'employee' ? 'Nouvelle intervenante' : item ? "Modifier l'intervention" : 'Nouvelle intervention'}</h2>
-    {isPerson ? <><label>Prénom<input name="firstName" required autoFocus /></label><label>Nom<input name="lastName" required /></label></> : <><label>Client<select name="clientId" defaultValue={item?.clientId}>{clients.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Intervenante<select name="employeeId" defaultValue={item?.employeeId}>{employees.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Date<input name="date" type="date" required defaultValue={item?.startAt.slice(0, 10) || modal.date} /></label><div className="row"><label>Début<input name="start" type="time" required defaultValue={item?.startAt.slice(11, 16) || '09:00'} /></label><label>Fin<input name="end" type="time" required defaultValue={item?.endAt.slice(11, 16) || '10:00'} /></label></div></>}
+    {isPerson ? <><label>Prénom<input name="firstName" required autoFocus /></label><label>Nom<input name="lastName" required /></label></> : <><label>Client<select name="clientId" defaultValue={item?.clientId}>{clients.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Intervenante<select name="employeeId" defaultValue={item?.employeeId}>{employees.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label><label>Date<input name="date" type="date" required defaultValue={item?.startAt.slice(0, 10) || modal.date} /></label><div className="row"><label>Début<input name="start" type="time" required defaultValue={item?.startAt.slice(11, 16) || modal.start || '09:00'} /></label><label>Fin<input name="end" type="time" required defaultValue={item?.endAt.slice(11, 16) || modal.end || '10:00'} /></label></div></>}
     <p className="error">{error}</p><div className="actions">{item && <button type="button" className="danger" onClick={remove}>Supprimer</button>}<button type="button" onClick={close}>Annuler</button><button className="primary">Enregistrer</button></div>
   </form></div>;
 }
