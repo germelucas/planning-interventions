@@ -26,6 +26,27 @@ const isoWeek = date => {
   return { number: Math.ceil((((value - yearStart) / 86400000) + 1) / 7), year: value.getUTCFullYear() };
 };
 
+const layoutOverlaps = items => {
+  const layout = new Map();
+  const sorted = [...items].sort((a, b) => a.startAt.localeCompare(b.startAt) || a.endAt.localeCompare(b.endAt));
+  let cluster = [], clusterEnd = '', columnEnds = [];
+  const finishCluster = () => {
+    const columns = Math.max(1, columnEnds.length);
+    cluster.forEach(({ item, column }) => layout.set(item.id, { column, columns }));
+    cluster = []; columnEnds = [];
+  };
+  for (const item of sorted) {
+    if (cluster.length && item.startAt >= clusterEnd) finishCluster();
+    let column = columnEnds.findIndex(endAt => endAt <= item.startAt);
+    if (column < 0) column = columnEnds.length;
+    columnEnds[column] = item.endAt;
+    cluster.push({ item, column });
+    if (!clusterEnd || item.endAt > clusterEnd) clusterEnd = item.endAt;
+  }
+  if (cluster.length) finishCluster();
+  return layout;
+};
+
 async function api(url, options = {}) {
   const endpoint = `/api/handler?path=${encodeURIComponent(url)}`;
   const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
@@ -199,6 +220,7 @@ function MonthView({ cursor, items, onNew, onItemContext, onMove, draggingId, se
 
 function DayColumn({ day, items, allItems, onNew, onContextRequest, onItemContext, onEdit, onMove, onResize, draggingId, setDraggingId, dropPreview, setDropPreview }) {
   const dayId = dateKey(day);
+  const overlapLayout = layoutOverlaps(items);
   const preview = dropPreview?.day === dayId ? dropPreview : null;
   const previewItem = preview && allItems.find(item => item.id === preview.itemId);
   const previewDuration = previewItem ? timeInMinutes(previewItem.endAt) - timeInMinutes(previewItem.startAt) : 0;
@@ -229,7 +251,9 @@ function DayColumn({ day, items, allItems, onNew, onContextRequest, onItemContex
       const top = Math.max(0, ((startHour - START_HOUR) * 60 + startMinute) * HOUR_HEIGHT / 60);
       const duration = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
       const height = Math.max(44, duration * HOUR_HEIGHT / 60);
-      return <button key={item.id} draggable className={`event color-${item.employeeId % 4} ${draggingId === item.id ? 'dragging' : ''}`} style={{ top, height }} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onItemContext(item, event.clientX, event.clientY); }} onDragStart={event => { if (event.target.closest('.resize-handle')) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', String(item.id)); event.dataTransfer.effectAllowed = 'move'; hideNativeDragPreview(event); setDraggingId(item.id); }} onDragEnd={() => { setDraggingId(null); setDropPreview(null); }} onDoubleClick={event => event.stopPropagation()} title="Maintenez et déplacez pour changer le créneau">
+      const { column, columns } = overlapLayout.get(item.id) || { column: 0, columns: 1 };
+      const eventStyle = { top, height, left: `calc(${column * 100 / columns}% + 3px)`, width: `calc(${100 / columns}% - 6px)`, right: 'auto' };
+      return <button key={item.id} draggable className={`event color-${item.employeeId % 4} ${draggingId === item.id ? 'dragging' : ''}`} style={eventStyle} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onItemContext(item, event.clientX, event.clientY); }} onDragStart={event => { if (event.target.closest('.resize-handle')) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', String(item.id)); event.dataTransfer.effectAllowed = 'move'; hideNativeDragPreview(event); setDraggingId(item.id); }} onDragEnd={() => { setDraggingId(null); setDropPreview(null); }} onDoubleClick={event => event.stopPropagation()} title="Maintenez et déplacez pour changer le créneau">
         <i className="resize-handle resize-handle-top" onPointerDown={event => onResize(item, 'start', event)} title="Modifier l’heure de début" aria-label="Modifier l’heure de début" /><b>{item.startAt.slice(11, 16)} – {item.endAt.slice(11, 16)}</b><span>{item.clientFirstName} {item.clientLastName}</span><small>{item.employeeFirstName} {item.employeeLastName}</small><i className="resize-handle resize-handle-bottom" onPointerDown={event => onResize(item, 'end', event)} title="Modifier l’heure de fin" aria-label="Modifier l’heure de fin" />
       </button>;
     })}
