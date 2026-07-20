@@ -1,0 +1,32 @@
+# Dépendances installées localement
+node_modules/
+
+# Build généré par Vite
+dist/
+
+# Configuration locale et secrets
+.env
+.env.*
+!.env.example
+
+# Journaux
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Fichiers temporaires SQLite (planning.db reste versionnée)
+planning.db-shm
+planning.db-wal
+planning.db-journal
+
+# Fichiers système et éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Ancien cache Python éventuel
+__pycache__/
+*.py[cod]
