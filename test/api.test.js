@@ -2,7 +2,7 @@ import test, { after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { newDb } from 'pg-mem';
-import { createApp } from '../server/postgres-app.js';
+import { createApp } from '../server/app.js';
 
 const memory = newDb();
 memory.public.none(`
@@ -16,9 +16,26 @@ const app = createApp({ database });
 after(() => pool.end());
 beforeEach(async () => {
   await pool.query('delete from interventions;delete from clients;delete from employees');
-  await pool.query("insert into clients(id,first_name,last_name)values(1,'A','Client'),(2,'B','Client');insert into employees(id,first_name,last_name)values(1,'E','Employée'),(2,'F','Employée')");
+  // Des identifiants négatifs laissent la séquence libre pour tester les créations.
+  await pool.query("insert into clients(id,first_name,last_name)values(-1,'A','Client'),(-2,'B','Client');insert into employees(id,first_name,last_name)values(-1,'E','Employée'),(-2,'F','Employée')");
 });
-const base = { clientId: 1, employeeId: 1, startAt: '2026-07-14T14:00', endAt: '2026-07-14T16:00' };
+const base = { clientId: -1, employeeId: -1, startAt: '2026-07-14T14:00', endAt: '2026-07-14T16:00' };
+
+test('crée et liste les clients et les intervenantes', async () => {
+  const client = await request(app)
+    .post('/api/clients')
+    .send({ firstName: 'Nouveau', lastName: 'Client' });
+  const employee = await request(app)
+    .post('/api/employees')
+    .send({ firstName: 'Nouvelle', lastName: 'Intervenante' });
+
+  assert.equal(client.status, 201);
+  assert.equal(employee.status, 201);
+  assert.equal(client.body.firstName, 'Nouveau');
+  assert.equal(employee.body.lastName, 'Intervenante');
+  assert.equal((await request(app).get('/api/clients')).body.length, 3);
+  assert.equal((await request(app).get('/api/employees')).body.length, 3);
+});
 
 test('CRUD complet', async () => {
   const created = await request(app).post('/api/interventions').send(base);
@@ -35,5 +52,5 @@ test('refuse ordre invalide et chevauchement', async () => {
 });
 test('autorise des intervenantes différentes', async () => {
   assert.equal((await request(app).post('/api/interventions').send(base)).status, 201);
-  assert.equal((await request(app).post('/api/interventions').send({ ...base, clientId: 2, employeeId: 2 })).status, 201);
+  assert.equal((await request(app).post('/api/interventions').send({ ...base, clientId: -2, employeeId: -2 })).status, 201);
 });
