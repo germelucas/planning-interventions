@@ -16,7 +16,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Fichiers temporaires SQLite (planning.db reste versionnée)
+# Ancienne base SQLite et fichiers temporaires locaux
+planning.db
 planning.db-shm
 planning.db-wal
 planning.db-journal
